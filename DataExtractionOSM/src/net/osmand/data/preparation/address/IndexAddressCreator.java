@@ -530,12 +530,20 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 		return newName.trim();
 	}
 
-	public Set<Long> getStreetInCity(Set<String> isInNames, String name, String nameEn, LatLon location) throws SQLException {
+	public Set<Long> getStreetInCity(Entity e, String name, String nameEn, LatLon location) throws SQLException {
+		Set<String> isInNames;
+		String city;
 		if (name == null || location == null) {
 			return Collections.emptySet();
-		
+		}
+		isInNames = e.getIsInNames();
+		city = e.getTag(OSMTagKey.ADDR_CITY);
+		if (city != null) {
+			isInNames = new LinkedHashSet<String>(isInNames);
+			isInNames.add(city);
 		}
 		name = normalizeStreetName(name);
+
 		Set<City> result = new LinkedHashSet<City>();
 		List<City> nearestObjects = new ArrayList<City>();
 		nearestObjects.addAll(cityManager.getClosestObjects(location.getLatitude(),location.getLongitude()));
@@ -545,14 +553,19 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 			Multipolygon boundary = cityBoundaries.get(c);
 			if (isInNames.contains(c.getName()) || (boundary != null && boundary.containsPoint(location))) {
 				result.add(c);
+				double dist = MapUtils.getDistance(location,
+					c.getLocation());
+				if (dist < mindist)
+					mindist = dist;
 			}
 		}
+
 		//or we need to find closes city
-		if (result.isEmpty()) {
-			City city = getClosestCity(location, isInNames, nearestObjects);
-			if (city != null) {
-				result.add(city);
-			}
+		for (City c : getClosestCities(location, isInNames, nearestObjects)) {
+			double dist = MapUtils.getDistance(location,
+					c.getLocation());
+			if (dist < mindist)
+				result.add(c);
 		}
 		return registerStreetInCities(name, nameEn, location, result);
 	}
@@ -646,29 +659,43 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 	}
 
 
-	public City getClosestCity(LatLon point, Set<String> isInNames, Collection<City> nearCitiesAndVillages) {
+	public Set<City> getClosestCities(LatLon point, Set<String> isInNames, Collection<City> nearCitiesAndVillages) {
+		Set<City> result = new LinkedHashSet<City>();
 		if (point == null) {
 			return null;
 		}
-		// search by distance considering is_in names 
+		// search by distance considering is_in names
 		City closest = null;
+		City closestNonHamlet = null;
 		double relDist = Double.POSITIVE_INFINITY;
+		double relDistNonHamlet = Double.POSITIVE_INFINITY;
 		for (City c : nearCitiesAndVillages) {
 			if(isInNames.contains(c.getName())){
-				return c;
+				result.add(c);
 			}
 			double rel = MapUtils.getDistance(c.getLocation(), point) / c.getType().getRadius();
-			if (rel < relDist) {
-				closest = c;
-				relDist = rel;
-				if (relDist < 0.2d && isInNames.isEmpty()) {
-					return closest;
+			/* Treat hamlets, suburbs, neighbourhoods as subareas
+			 * rather than autonomous localities */
+			if (c.getType() == CityType.HAMLET ||
+					c.getType() == CityType.NEIGHBOURHOOD ||
+					c.getType() == CityType.SUBURB) {
+				if (rel < relDist) {
+					closest = c;
+					relDist = rel;
+				}
+			} else {
+				if (rel < relDistNonHamlet) {
+					closestNonHamlet = c;
+					relDistNonHamlet = rel;
 				}
 			}
 		}
-		return closest;
+		if (relDist < relDistNonHamlet)
+			result.add(closest);
+		result.add(closestNonHamlet);
+		return result;
 	}
-	
+
 	public void iterateMainEntity(Entity e, OsmDbAccessorContext ctx) throws SQLException {
 		// index not only buildings but also nodes that belongs to addr:interpolation ways
 		// currently not supported because nodes are indexed first with buildings 
@@ -746,7 +773,7 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 			boolean exist = streetDAO.findBuilding(e);
 			if (!exist) {
 				LatLon l = e.getLatLon();
-				Set<Long> idsOfStreet = getStreetInCity(e.getIsInNames(), e.getTag(OSMTagKey.ADDR_STREET), null, l);
+				Set<Long> idsOfStreet = getStreetInCity(e, strt, null, l);
 				if (!idsOfStreet.isEmpty()) {
 					Building building = new Building(e);
 					int i = hno.indexOf('-');
@@ -772,7 +799,7 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 							building.setName(hno.substring(0, secondNumber));
 							Building building2 = new Building(e);
 							building2.setName(hno.substring(secondNumber + 1));
-							Set<Long> ids2OfStreet = getStreetInCity(e.getIsInNames(), e.getTag(OSMTagKey.ADDR_STREET2), null, l);
+							Set<Long> ids2OfStreet = getStreetInCity(e, e.getTag(OSMTagKey.ADDR_STREET2), null, l);
 							ids2OfStreet.removeAll(idsOfStreet); //remove duplicated entries!
 							if(!ids2OfStreet.isEmpty()) {
 								streetDAO.writeBuilding(ids2OfStreet, building2);
@@ -798,7 +825,7 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 			// check that street way is not registered already
 			if (!exist) {
 				LatLon l = e.getLatLon();
-				Set<Long> idsOfStreet = getStreetInCity(e.getIsInNames(), e.getTag(OSMTagKey.NAME), e.getTag(OSMTagKey.NAME_EN), l);
+				Set<Long> idsOfStreet = getStreetInCity(e, e.getTag(OSMTagKey.NAME), e.getTag(OSMTagKey.NAME_EN), l);
 				if (!idsOfStreet.isEmpty()) {
 					streetDAO.writeStreetWayNodes(idsOfStreet, (Way) e);
 				}
