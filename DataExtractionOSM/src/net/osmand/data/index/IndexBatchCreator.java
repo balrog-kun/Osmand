@@ -314,6 +314,9 @@ public class IndexBatchCreator {
 		}
 		File toIndex = null;
 		File saveTo = new File(osmDirFiles, regionName + ext);
+		if (saveTo.exists()) {
+			return saveTo;
+		}
 		if (wget == null || wget.trim().length() == 0) {
 			toIndex = internalDownload(url, saveTo);
 		} else {
