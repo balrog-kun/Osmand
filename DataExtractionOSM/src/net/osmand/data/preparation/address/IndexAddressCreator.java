@@ -400,7 +400,7 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 							}
 						}
 
-						Set<Long> streetId = registerStreetInCities(name, null, location, Collections.singletonList(c));
+						Set<Long> streetId = registerStreetInCities(name, null, location, Collections.singletonList(c), 5000);
 						if (streetId == null) {
 							return;
 						}
@@ -548,7 +548,8 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 		List<City> nearestObjects = new ArrayList<City>();
 		nearestObjects.addAll(cityManager.getClosestObjects(location.getLatitude(),location.getLongitude()));
 		nearestObjects.addAll(cityVillageManager.getClosestObjects(location.getLatitude(),location.getLongitude()));
-		//either we found a city boundary the street is in
+
+		double mindist = 100000; /* 100km */
 		for (City c : nearestObjects) {
 			Multipolygon boundary = cityBoundaries.get(c);
 			if (isInNames.contains(c.getName()) || (boundary != null && boundary.containsPoint(location))) {
@@ -567,11 +568,15 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 			if (dist < mindist)
 				result.add(c);
 		}
-		return registerStreetInCities(name, nameEn, location, result);
+
+		double maxdist = e.getTag(OSMTagKey.ADDR_PLACE) == null ?
+			5000 : 60000;
+		return registerStreetInCities(name, nameEn, location,
+				result, maxdist);
 	}
 
 
-	private Set<Long> registerStreetInCities(String name, String nameEn, LatLon location, Collection<City> result) throws SQLException {
+	private Set<Long> registerStreetInCities(String name, String nameEn, LatLon location, Collection<City> result, double maxdist) throws SQLException {
 		if (result.isEmpty()) {
 			return Collections.emptySet();
 		}
@@ -585,7 +590,7 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 			SimpleStreet foundStreet = streetDAO.findStreet(name, city);
 			if (foundStreet != null) {
 				//matching the nodes is done somewhere else. This is just a simple check if the streets are really close to each other
-				if (MapUtils.getDistance(location, foundStreet.getLocation()) > 900) { 
+				if (MapUtils.getDistance(location, foundStreet.getLocation()) > maxdist) {
 					//oops, same street name within one city!
 					if (foundStreet.getCityPart() == null) {
 						//we need to update the city part first 
