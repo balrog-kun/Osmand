@@ -688,8 +688,17 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 			if (type != null || interpolationInterval > 0) {
 				List<Node> nodesWithHno = new ArrayList<Node>();
 				for (Node n : ((Way) e).getNodes()) {
-					if (n.getTag(OSMTagKey.ADDR_HOUSE_NUMBER) != null && n.getTag(OSMTagKey.ADDR_STREET) != null) {
-						nodesWithHno.add(n);
+					if (n.getTag(OSMTagKey.ADDR_HOUSE_NUMBER) != null) {
+						String strt = n.getTag(OSMTagKey.ADDR_STREET);
+						if (strt == null) {
+							strt = n.getTag(OSMTagKey.ADDR_PLACE);
+						}
+						if (strt == null) {
+							strt = n.getTag(OSMTagKey.ADDR_CITY);
+						}
+						if (strt != null) {
+							nodesWithHno.add(n);
+						}
 					}
 				}
 				if (nodesWithHno.size() > 1) {
@@ -701,7 +710,14 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 							streetDAO.removeBuilding(first);
 						}
 						LatLon l = e.getLatLon();
-						Set<Long> idsOfStreet = getStreetInCity(first.getIsInNames(), first.getTag(OSMTagKey.ADDR_STREET), null, l);
+						String strt = first.getTag(OSMTagKey.ADDR_STREET);
+						if (strt == null) {
+							strt = first.getTag(OSMTagKey.ADDR_PLACE);
+						}
+						if (strt == null) {
+							strt = first.getTag(OSMTagKey.ADDR_CITY);
+						}
+						Set<Long> idsOfStreet = getStreetInCity(first, strt, null, l);
 						if (!idsOfStreet.isEmpty()) {
 							Building building = new Building(first);
 							building.setInterpolationInterval(interpolationInterval);
@@ -714,15 +730,25 @@ public class IndexAddressCreator extends AbstractIndexPartCreator{
 					}
 				}
 			}
-		} 
-		if (e.getTag(OSMTagKey.ADDR_HOUSE_NUMBER) != null && e.getTag(OSMTagKey.ADDR_STREET) != null) {
+		}
+		String hno = e.getTag(OSMTagKey.ADDR_HOUSE_NUMBER);
+		String strt = null;
+		if (hno != null) {
+			strt = e.getTag(OSMTagKey.ADDR_STREET);
+			if (strt == null) {
+				strt = e.getTag(OSMTagKey.ADDR_PLACE);
+			}
+			if (strt == null) {
+				strt = e.getTag(OSMTagKey.ADDR_CITY);
+			}
+		}
+		if (hno != null && strt != null) {
 			boolean exist = streetDAO.findBuilding(e);
 			if (!exist) {
 				LatLon l = e.getLatLon();
 				Set<Long> idsOfStreet = getStreetInCity(e.getIsInNames(), e.getTag(OSMTagKey.ADDR_STREET), null, l);
 				if (!idsOfStreet.isEmpty()) {
 					Building building = new Building(e);
-					String hno = e.getTag(OSMTagKey.ADDR_HOUSE_NUMBER);
 					int i = hno.indexOf('-');
 					if(i != -1) {
 						building.setInterpolationInterval(1);

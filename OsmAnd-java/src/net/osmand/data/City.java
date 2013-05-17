@@ -140,6 +140,12 @@ public class City extends MapObject {
 	public Building registerBuilding(Entity e) {
 		String number = e.getTag(OSMTagKey.ADDR_HOUSE_NUMBER);
 		String street = e.getTag(OSMTagKey.ADDR_STREET);
+		if (street == null && number != null) {
+			street = e.getTag(OSMTagKey.ADDR_PLACE);
+		}
+		if (street == null && number != null) {
+			street = e.getTag(OSMTagKey.ADDR_CITY);
+		}
 		if (street != null && number != null) {
 			return registerStreet(street).registerBuilding(e);
 		}
